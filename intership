@@ -1,0 +1,86 @@
+# def analyze_file(file_path):
+#   with open(file_path,'r') as file:
+
+import typing
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
+
+
+
+#extracting data from spreadsheet.
+def scrapeDataFromSpreadsheet() -> typing.List[typing.List[str]]:
+    html = requests.get('https://docs.google.com/spreadsheets/d/1eRujNQYov-tZ8j9yvkah6lSzJOpNweMF/edit?usp=sharing&ouid=112202623045573667171&rtpof=true&sd=true').text
+    soup = BeautifulSoup(html, 'lxml')
+    salas_cine = soup.find_all('table')[0]
+    rows = [[td.text for td in row.find_all("td")] for row in salas_cine.find_all('tr')]
+    return rows
+
+
+
+# updating the hours as per time in and time out.
+def updateTimeDifference(employess,position, current_date, last_worked):
+  for shift in employess[position]['shifts']:
+    if(current_date == shift['date']):
+      completed_hours = last_worked - shift['initial_date']
+      shift['last_date'] = last_worked
+      shift['hours'] = (completed_hours.total_seconds() / 3600)
+
+
+#taking the data from spreadsheet and sorting the data
+def convertData(rows):
+  employess = {}
+  for row in rows:
+    position = row[0]
+    name = row[7]
+    worked_hours = row[4]
+    date_worked = row[2]
+    last_worked = row[3]
+    if(date_worked == "" or worked_hours == "" or last_worked == ""):
+      continue
+    current_date = datetime.strptime(date_worked.split(" ")[0], '%m/%d/%Y')
+    date_worked = date_worked.replace(" ","")
+    date_worked = datetime.strptime(date_worked, '%m/%d/%Y%H:%M%p')
+    last_worked = datetime.strptime(last_worked, '%m/%d/%Y %I:%M %p')
+    worked_hours = datetime.strptime(worked_hours, '%H:%M').hour
+    if position not in employess:
+      employess[position] = {'name' : set(), 'shifts': []};
+    employess[position]['name'].add(name)
+    if any(current_date == shift['date'] for shift in employess[position]['shifts']):
+      updateTimeDifference(employess,position, current_date, last_worked)
+    else:
+      employess[position]['shifts'].append({'date': current_date,'initial_date' : date_worked, 'last_date': last_worked, 'hours' : worked_hours})
+
+  return employess
+
+#checking who has worked for 14 hours in a single shift
+def checking14Hours(shift):
+  return any( shift['hours'] > 14 for shift in current_shifts)
+
+#checking who has worked for 7 consecutive days
+def checkingConsecutiveDays(shift):
+  return any((current_shifts[i]['date'] - current_shifts[i-1]['date']).days == 1 for i in range(1,len(current_shifts)))
+
+#checking who has worked for more than 14 hours in a single shift.
+def checkingLessThan10Hours(shift):
+  for i in range(1,len(shift)):
+    total_hours = (shift[i]['last_date'] - shift[i-1]['initial_date']).total_seconds() / 3600
+    if(1 < total_hours < 10):
+      return True
+  return False
+
+rows = scrapeDataFromSpreadsheet()
+rows.pop(0)
+rows.pop(0)
+employess = convertData(rows)
+
+
+for position,data in employess.items():
+  current_shifts = data['shifts']
+
+# checking all the conditions and printing the data
+  if(checking14Hours(current_shifts) and checkingConsecutiveDays(current_shifts) and checkingLessThan10Hours(current_shifts)):
+    print(current_shifts[0]['name'],position)
+
+
+
